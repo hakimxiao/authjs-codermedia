@@ -19,7 +19,7 @@ const Navbar = async () => {
                             // conditional rendering, hanya bisa di akses saat session true(login)
                             <>
                                 <li><Link href={'/product'}>Product</Link></li>
-                                <li><Link href={'/dashbioard'}>Dashboard</Link></li>
+                                <li><Link href={'/dashboard'}>Dashboard</Link></li>
                                 {session.user.role === 'admin' ? (
                                     // conditional rendering, hanya bisa di akses jika login dan role admin
                                     <li><Link href={'/user'}>User</Link></li>

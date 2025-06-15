@@ -632,3 +632,26 @@ Untuk menambahkan fitr login menggunakan github silahkan ikuti cara berikut ini 
                                                 </span>
                                                 </div>
                                         ) : null}
+
+
+===============================
+=        PERMASALAHAN         =
+===============================
+        PENTING :
+                Ketika kita melakukan deploy dan build maka fitur sign in google dan github kita tidak berfungsi hal dikeranakan domain yang 
+                kita gunakan bukan local host lagi oleh karean itu kita wajib mendaftarkan domain uri baru nya ke google dan juga github 
+                        1. GOOGLE
+                                1. pergi ke console.cloud.google masuk ke project auth tutorial, di dasshboard menu kiri klik dan pilih 
+                                   APIs and service kemudian dikiri klik crendentials pilih project kita kemudian
+                                   tambhakna di Authorized JavaScript origins domain vercel 
+                                   silahkan pergi ke dashboard project kita copy bagian domain
+                                2. kemudian di authorized redirect URis 
+                                   ganti local host ke nama domain yang ada di vercel kita : https://authjs-codermedia-mcbw.vercel.app/api/auth/callback/google
+                                3. save
+                        
+                        2. GITHUB 
+                                1. Masuk ke developer setting pilih OAuth pilih project kita kemudian 
+                                2. perbarui homepage url :
+                                        sesuai dengan domain vercel : https://authjs-codermedia-mcbw.vercel.app
+                                   perbarui authorization callback url : 
+                                        sesuai ddengan domain vbercel : https://authjs-codermedia-mcbw.vercel.app/api/auth/callback/github 
