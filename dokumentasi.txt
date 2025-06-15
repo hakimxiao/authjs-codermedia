@@ -1,0 +1,634 @@
+Authentikasi Dengan Auth.js dan Prisma     
+
+    1). Set Up :
+            $ npx create-next-app@latest .
+            $ npm i -D prisma
+            $ npm i @prisma/client
+            $ npm i zod react-icons bcrypt-ts               *   bcrypt-ts : khusus untuk typescript
+            $ npm install next-auth@beta
+            $ npm i @auth/prisma-adapter                    *   adapter sangat perlu untuk aunthentikasi, lihat di docs adapter di : auth.js
+            $ npx prisma init
+
+    2). Koneksivitas Dengan Vercel : 
+            1.  --  Pergi ke vercel.com kemudian di dashboard kelik menu storage dan disana cretae database pilih postgres neon.
+                    buat database dengan kota terrdekat. 
+                --  Copy dibagian .env.local kemudian anda override di dalam folder .env project
+                --  Pergi ke bagian prisma di dalam vercel neon kemudian anda copy semua yang ada didalam sana kemudian paste didalam 
+                    file schema.prisma didalam project kita. 
+            
+            Sampai disini kita sudah berhasil terkoneksi di database yang ada di vercel.
+    
+    3). Set Up Next Auth.js
+                --      Kebagian getting started di instalation 
+                --      kita mualai dari no 2, Buat AUTH_SECRET didalam environment / .env
+                --      Configure, kita disuruh membuat file auth.ts dimana isinya sama dengan yang ada di dokumentasi,
+                        lokasi file nya di root project.
+                --      Buat API dengan roioute handler path nya harus sama seperti yang dikdokumentasi contoh : 
+                        Add a Route Handler under /app/api/auth/[...nextauth]/route.ts.
+                --      Membuat middlerware copy yang ada didokumentasi kemudian didalam root project kita 
+                        buat file baru bernama middleware.ts --> ini berfungsi untuk mengupdate session agar tidak expire.
+     
+    4). Connection Adaptor WIth Prisma 
+                --      Pergi ke bagian connection di dokumentasi kemudian cari prisma
+                --      Karena kita sudah menginstall dan koneksi pada environments maka kita lanjut ke tahap 3
+                --      Membuat instance dari prisma, di configure copy semua code nya, kemudian kemballi ke project
+                        pada root project buat folder baru bernama lib dan didalamnya buat file bernama prisma.ts 
+                        kemudian paste kodenya disana
+                --      Kembali ke file root/auth.ts kita import hal baru sesuai dengan yang ada didokumentasi.
+                        import { PrismaAdapter } from "@auth/prisma-adapter"    --> ini sudah disediakan dari auth  
+                        import {prisma} from '@/lib/prisma'                     --> ini instanmnce yang kita buat tadi
+                --      kemudian didalam function nextAuth tambahkan setup berikut nextAuth({
+                                  adapter: PrismaAdapter(prisma),
+                                providers: [],
+                        })
+                --      Pergi kebagian : Schema - Naming Conventions
+                        disana anda akan diberikan code schema baru copy semuanya dan masukkan ke dalam project tepatnya di folder
+                        schema/schema.prisma, pasti di bagian bawah tanbpa override code belumnya 
+
+                *--     Di tabel user tambahkan password dan role karena kita menggunakan credentials provider 
+                        dan password nya kita jadikan opsional karena login dengan github kita tidak mengguanakn password
+
+                                password      String?
+                                role          String    @default("user")
+
+                                default value role adalah user(tabel user).
+
+                --      Sekarang karena kita ada product maka kita buat table product 
+                                model User {
+                                        id            String    @id @default(cuid())
+                                        name          String?
+                                        email         String?   @unique
+                                        emailVerified DateTime? @map("email_verified")
+                                        password      String?
+                                        role          String    @default("user")
+                                        image         String?
+                                        accounts      Account[]
+                                        sessions      Session[]
+                                        // penghubung ke tabel Product :
+                                        products      Product?
+
+                                        @@map("users")
+                                }
+
+                                model Product {
+                                        id        String   @id @default(cuid())
+                                        name      String
+                                        price     Int
+                                        createdAt DateTime @default(now())
+                                        updatedAt DateTime @updatedAt
+                                        // membuat relasi antara tabel Product dengan User 
+                                        userId    String   @unique // penghubung ke tabel User 
+                                        user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+                                }
+                
+                        disini kita membuat relasi antar tabel antara Product dan user 
+                
+                --      npx prisma migrate dev --name init 
+                        skarena setup selesai kita migrasikan.
+                --      npx prisma studio
+                        ini untuk mengelola tabel nya.
+
+
+MEMBUAT SIGN IN 
+        -       Pergi ke file auth.ts kemudian buat tambahkan object baru didalam next auth yaitu session,
+                dan kita set strategy nya ke jwt.
+                        export const { handlers, auth, signIn, signOut } = NextAuth({
+                                adapter: PrismaAdapter(prisma),
+                                session: {strategy: "jwt"},
+                                providers: [],
+                        })
+        -       kemudian import Credentials from "next-auth/providers/credentials" didalam auth.ts 
+                kemudian pada array provider kita tambahkan credentials dan juga kita isi credentialls nya denagn 
+                email dan password serta authorize. 
+        -       Karena kita melakukkan validasi dengan zood maka buat sebuah variabel baru di zod.ts
+                berupa validasi
+        -       langkah langkah setup sign in : 
+
+                        0.      export const signInSchema = object({
+                                email: string().email('Invalid Email'),
+                                password: string()
+                                        .min(8, 'Password must be more 8 characters')
+                                        .max(32, 'Password must be lest then 32 characters'),
+                                } 
+                                );
+                        1.      buat session: {strategy: "jwt"}
+                        2.      didalam array provider panggil seperti berikut setrukturnya
+                                        import NextAuth from "next-auth"
+                                        import { PrismaAdapter } from "@auth/prisma-adapter"
+                                        import { prisma } from "@/lib/prisma"
+                                        import Credentials from "next-auth/providers/credentials"
+                                        import { signInSchema } from "./lib/zod"
+                                        import { compareSync } from "bcrypt-ts"
+                                        
+                                        export const { handlers, auth, signIn, signOut } = NextAuth({
+                                        adapter: PrismaAdapter(prisma),
+                                        session: {strategy: "jwt"},
+                                        pages: {
+                                                signIn: '/login'
+                                        },
+                                        providers: [
+                                                Credentials({
+                                                        credentials: {
+                                                                email: {},
+                                                                password: {}
+                                                        },
+                                                authorize: async (credentials) => {
+                                                        const validatedFields = signInSchema.safeParse(credentials);
+
+                                                        if(!validatedFields.success) {
+                                                                return null;
+                                                        }
+
+                                                        const {email, password} = validatedFields.data;
+
+                                                        const user = await prisma.user.findUnique({
+                                                                where: {email}
+                                                        })
+
+                                                        if(!user || !user.password) {
+                                                                throw new Error('No user found');
+                                                        }
+
+                                                        const passwordMatch = compareSync(password, user.password);
+
+                                                        if(!passwordMatch) {
+                                                                return null
+                                                        }
+
+                                                        return user
+                                                        }
+                                                        })
+                                                ],
+                                        })
+
+        -       Selanjutnya kita buat Component Untuk Sign in dan juga route handler nya 
+        -       Didalam folder components kita buat file baru Bernama FormLogin yang isinya FORM UI 
+                yang didalamnya terdapat action untuk signInCredentials
+        -       Setelah membuat components maka kita akan pergi ke action.ts ini adalah 
+                kumpulan kode dari aksi form. kemudian kita buat dan export variabel baru bernama
+                signInCredentials yang didalamnya terdapat : {
+
+                        signInCredentials => async(prevState:unknow, formData:FormData) {
+                                const validatedFields = signInSchema.parse(Pbject.formEntries(formData.entries()))
+
+                                if(!validateField.success) {
+                                        return {
+                                                error: validateField.error.flatten().fieldErrors
+                                        }
+                                }
+
+                                const {email, password} = validateField.data;
+
+                                try {
+                                        await signIn('credentials', {email, password, redirectTo: "/dashboard"})  --> dari @auth
+                                } catch (error) {
+                                        if(error instanceof AuthError) {
+                                                switch(error.type) {
+                                                        case "CredentialsSignin":
+                                                        return {message: "Invalid Credentials"}
+                                        
+
+                                                        default:
+                                                        return {message: "Someng went wrong with"}
+                                                }
+                                        }
+                                        throw error
+                                }
+                        }
+                }
+        
+        - Di FormLogin kita ganti action yang sebelumnya signUp menjadi signInCedentials 
+        - kemudian kita buat roun=ting folder nya di app
+        - app/login/page.tsx
+        - di page.tsx silahkan kalian desain layout nya kemudian pangggil component FormLogin 
+        - SELESAI
+
+
+MENGGUNAKAN SIGNOUT YANG DISEDIAKAN OLEH AUTHJS 
+        -       Signout sudah disediakan oleh authjs yaitu di folder yang pertama kita buat di 
+        -       app/api/
+        -       nah nama route yang bisa kita gunakan untuk logout adalah seperti ini 
+                app/auth/signout
+
+
+AUTHENTIUKASI SELESAI KKLIK INSPECT SAAT SUDAH LOGIN MASUK KE BAGIAN APPLICATION COOKIES LOCAL HOST MAKA KALAIAN AKAN MENDAAPATKAN SESSION
+
+
+
+==============================================
+=                                            =
+====      === BAGIAN DASHBOARD ===        ====
+==============================================
+        Untuk mengambil info tentang user kita bisa gunakan session caranya import file auth.ts yang ada di root kita 
+        kemudian buat variabel session await auth, dan saat pemanggilan tinggal seperti ini {session?.user?.name}
+
+
+
+
+
+=============================================================================
+=                                                                           =
+====     === MEMBERIKAN PROTEKSI DI ROUTE AGAR HALAMAN TERTENTU ===      ====
+                TIDAK BISA DI AKSES DISUATU KONDISI TERTENTU
+             CONTOH JIKA BELUM LOGIN DASHBOARD TIDAK BISA DI AKSES 
+                JIKA SUDAH LOGIN MENU LOGIN TIDAK BISA DI AKSES
+=============================================================================
+
+        == VERSI CODER MEDIA == NO FILE auth-edge.ts
+        1.  Pergi kedalam file auth.ts yang ada di root folder
+        2.  Buat kode berupa callbacks yang didalamnya terdapat beberapa function 
+            yaitu : 
+                1. authorized 
+                2. 
+            kode ini diletakan sesudah provider berikut codenya  : 
+                // callbacks proteksi untuk halaman tertentu
+                callbacks: {
+                        authorized({auth, request: {nextUrl}}) { 
+                                const isLoggedIn = !!auth?.user;
+                                const ProtectedRoutes = [
+                                        "/dashboard",
+                                        "/user",
+                                        "/product"
+                        ]
+
+                        // jika user belum login dan user mengakses halaman yang ada di ProtectedRoutes maka kita redirect ke halaman login
+                        if(!isLoggedIn && ProtectedRoutes.includes(nextUrl.pathname)){
+                                return Response.redirect(new URL("/login", nextUrl))
+                        }
+
+                        // jika user sudah login dan user mengakses halaman login maka kita redirect ke dashboard
+                        if(isLoggedIn && nextUrl.pathname.startsWith("login")){
+                                return Response.redirect(new URL("/dashboard", nextUrl))
+                        }
+
+                        return true
+                        }
+                }
+
+
+        == VERSI GPT ==
+        1.      Buat code ini di file middleware.ts yang ada di route folder 
+                // middleware.ts
+                import { auth } from "@/auth" // gunakan path sesuai project Anda
+                import { NextResponse } from "next/server"
+                import type { NextRequest } from "next/server"
+
+                export async function middleware(request: NextRequest) {
+                        const session = await auth()
+
+                        const isLoggedIn = !!session?.user
+                        const pathname = request.nextUrl.pathname
+
+                        const protectedRoutes = ["/dashboard", "/user", "/product"]
+
+                        // Redirect ke /login jika belum login dan akses halaman terlindungi
+                        if (!isLoggedIn && protectedRoutes.includes(pathname)) {
+                                return NextResponse.redirect(new URL("/login", request.url))
+                        }
+
+                        // Redirect ke /dashboard jika sudah login tapi akses /login
+                        if (isLoggedIn && pathname === "/login") {
+                                return NextResponse.redirect(new URL("/dashboard", request.url))
+                        }
+
+                        return NextResponse.next()
+                }
+
+                // Tentukan URL yang akan dilewati oleh middleware
+                export const config = {
+                        matcher: ["/dashboard", "/user", "/product", "/login"],
+                }
+
+        ** KENAPA VERSUI GPT BERHASIL DIPROYEK INI ? 
+                Tentu, berikut adalah **penjelasan teknis lengkap** mengapa **logika redirect otorisasi** (seperti `authorized()`) **harus 
+                diletakkan di `middleware.ts`**, **bukan di dalam `auth.ts` atau `NextAuth()`**, khususnya untuk dokumentasi Anda:
+                ---
+
+                ## 📄 Penjelasan: Mengapa Logika Redirect Harus Diletakkan di `middleware.ts`?
+
+                ### 🧩 1. **Perbedaan Tujuan `auth.ts` vs `middleware.ts`**
+
+                | File            | Tujuan                                                                                                                                                                                                    
+                | --------------- | --------------------------------------------------------------------------------------------------------------|
+                | `auth.ts`       | Untuk konfigurasi **NextAuth** seperti provider, adapter, session, callbacks (misalnya `signIn`, `jwt`,       | 
+                |                 | `session`) dan integrasi Prisma. Digunakan saat user login/logout atau ketika session diperlukan.             |
+                | --------------- | --------------------------------------------------------------------------------------------------------------|
+                | `middleware.ts` | Untuk **intersepsi permintaan HTTP sebelum sampai ke halaman**, dan memungkinkan kita untuk **mengontrol      | 
+                |                 | redirect, proteksi rute, dan filtering** berdasarkan kondisi autentikasi atau URL.                            |
+                | --------------- | --------------------------------------------------------------------------------------------------------------|              
+
+                📌 Maka, **`auth.ts` tidak memiliki akses langsung ke routing dan tidak bisa menjalankan redirect.**
+
+                ---
+
+                ### ⚠️ 2. `callbacks.authorized()` Sudah Tidak Didukung di `NextAuth v5`
+
+                * Di versi lama (NextAuth v4 dan sebelumnya), memang ada callback bernama `authorized()` di middleware.
+                * Namun di **NextAuth v5**, semua middleware otorisasi/redirect sekarang **harus ditangani lewat file `middleware.ts`**.
+                * `NextAuth({...})` sekarang hanya menangani **konfigurasi autentikasi**, bukan routing atau redirect.
+
+                > 🔁 Jadi, menaruh logika seperti `authorized()` di dalam `NextAuth()` **tidak akan pernah dijalankan**.
+
+                ---
+
+                ### 📦 3. `middleware.ts` Memiliki Akses Routing & Respon HTTP
+
+                Karena `middleware.ts` bekerja **di edge layer** (sebelum rendering halaman), maka dia:
+
+                * Bisa membaca URL (`request.nextUrl.pathname`)
+                * Bisa mengecek session dengan `auth()`
+                * Bisa melakukan redirect dengan `NextResponse.redirect(...)`
+
+                ➡️ Sementara `auth.ts` tidak bisa melakukan itu karena bukan bagian dari proses routing permintaan.
+
+                ---
+
+                ### 📍 4. Middleware Bisa Menangani Banyak Rute Sekaligus
+
+                Dengan `export const config = { matcher: [...] }` di `middleware.ts`, Anda bisa:
+
+                * Menentukan rute mana yang ingin diproteksi
+                * Melakukan **pre-check** terhadap login sebelum halaman di-render
+
+                Ini jauh lebih efisien dibanding menaruh pengecekan otorisasi di setiap halaman secara manual.
+
+                ---
+
+                ### 🧠 5. Contoh Alur Kerja Middleware dengan NextAuth v5
+
+                ```plaintext
+                [ Client Request to /dashboard ]
+                        ↓
+                [ middleware.ts dijalankan ]
+                        ↓
+                [ Cek apakah user sudah login dengan auth() ]
+                        ↓
+                [ Jika belum login → redirect ke /login ]
+                        ↓
+                [ Jika sudah login → lanjut render halaman ]
+                ```
+
+                Sementara `auth.ts` hanya bekerja saat:
+
+                * Login
+                * Logout
+                * Mengambil session (`auth()`)
+                * Validasi token
+
+                ---
+
+                ## ✅ Kesimpulan
+
+                | Alasan                       | Penjelasan                                                                          |
+                | ---------------------------- | ----------------------------------------------------------------------------------- |
+                | 🔁 Pemisahan tanggung jawab  | `auth.ts` hanya untuk konfigurasi, `middleware.ts` untuk proteksi rute dan redirect |
+                | ❌ `authorized()` tidak valid | Tidak ada `callbacks.authorized()` di `NextAuth v5`                                 |
+                | ⚙️ Middleware bisa redirect  | Hanya `middleware.ts` yang bisa `redirect()` berdasarkan login                      |
+                | 📊 Efisiensi & Skalabilitas  | Middleware bisa memproteksi banyak halaman sekaligus tanpa kode duplikat            |
+                | 🔒 Keamanan                  | Middleware mencegah akses bahkan sebelum halaman dirender                           |
+
+                ---
+
+                Jika Anda ingin, saya bisa bantu buatkan bagian dokumentasi markdown (`.md`) atau Word-nya untuk dijadikan laporan atau catatan 
+                pribadi Anda. Mau saya bantu buatkan formatnya?
+
+
+
+=============================================================================
+=                                                                           =
+====     ===           MEMBEDAKAN ROLE PENGGUNA                 ===      ====
+=                                                                           =
+=============================================================================
+        *       Untuk membedakan pengguna pada aplikasi kita maka kita akan mengedit dibagian auth.ts dimana sesudah providers kita tambahkan
+                callback yang dimana callbacks ini memiliki 2 hal yaitu jwt dan session seperti berikut : 
+
+                        #       callback: {
+                                        jwt({token, user}) {
+                                                if(user) token.role = user.role;
+                                                return token;
+                                        },
+                                        session({session, token}) {
+                                                session.user.id = token.sub;
+                                                session.user.role = token.role;
+                                                return session;
+                                        }
+                                }
+
+                        #*#     Kode ini akan menghasilkan error types oleh karena itu kita lanjut membuat tipe untuk authentikasi ini :
+
+        *       1.      Buat folder di route project dengan nama : types 
+                2.      Buat file dengan nama : authjs.d.ts
+                3.      didalamnya kita butuh : 
+                                a. import DefaultSession dari next-auth yang dimana kita buat dia menjadi type : {type DefaultSession}  
+                                b. buat 2 declare module(memodifikasi library) : 
+
+                                        i.  declare module "next-auth" {
+                                                 interface Session {
+                                                         user: User & DefaultSession["user"];
+                                                 }
+
+                                                 interface User {
+                                                        role: string;
+                                                 }
+                                            }
+
+                                        ii. declare module "next-auth/jwt" {
+                                                interface JWT {
+                                                        sub: string;
+                                                        role: string;
+                                                }
+                                        }
+        
+        *       Selesai sekarang kita sudah mempunyai session yang didalamnya terdapat id dan role dan 
+                module nya sudah d modifikasi sehingga tidak terjadi error typescript.
+
+
+
+
+
+===========================================
+=   - - - - - - - - - - - - - - - - - -   =                              
+= MENAMBAHKAN FITUR SIGN IN DENGAN GOOGLE =
+=   - - - - - - - - - - - - - - - - - -   =                              
+===========================================
+
+Untuk Mmembuat authentikasi yang bisa digunakan dengan google kita membutuhkan google client id dan google client secreet.
+
+        1.      Cara Mendapatkan Google Client Id Dan Google Client Secreet : 
+                *---    Pergi ke                                : console.cloud.google.com 
+                *---    Dibagian atas kiri sesudah Google CLoud anda buat project baru create new project, setelah create
+                        project klik pilih maka sekarang cloud console kita sudah di project yang kita buat.    
+                *---    Dibagian atas kiri                      : klik menu -> pilih APIs & Service -> pilih Credentials 
+                        disana anda akan dimita untuk melakukkan konfigurasi consent scrreen klik notif tersebut.
+                *---    Isi semua project configuration 
+                        audience :      external
+                        kemudian klik create
+                *---    Kembali ke APIs & Services kemudian masuk ke OAuth Consent Screen, di menu kiri masuk ke bagian audience
+                        di testing klik publish app * ini bertujuan untuk jika kita bisa menggunakannya di development maupun
+                        production.
+                *---    Kembali ke APIs & Services kemudian masuk ke Credential. DIbagian atas anda klik + CREATE CREDENTIALS 
+                                * klik dibagian OAuth Client ID 
+                                * di application type kita pilih web application karena untuk web
+                                * buat nama aplikasinya
+                                * Dibagian Authorized JavaScript origins, ini akan kita isi dengan domain nantinya
+                                * Dibagian Authorized redirect URIs, kita add dan inset nya bisa diambil di dokumentasi authjs  
+                                  pada authentication google OAuth di 1. Register OAuth App in Google's dashboard copy setelah
+                                  origin saja. origihn isi dengan ini http://localhost:3000
+                                * Kemudian Create, sehingga kita akan mendapatkan client id dan client secreet
+                                
+
+                *---    Copy client ID dan juga client secreet. Masukkan 2 hal ini kedalam file .env kita
+                        nama variabel nya bisa dilihat didalam authjs doc di bagian OAuth no2
+
+                *---    Pergi ke auth.ts yang ada di root kemudian 
+                        1. import google provider dari next-auth/providers/google
+                        2. di providers tambahkan Google
+                *---    Pergi ke SocialButton.tsx kemudian : 
+                        1. kita import sign in yang ada didalam @/auth 
+                        2. pada action form kita isi callback asynchronous yang body nya kita definisikan use server 
+                           kemudian kita : await signIn('google') *parameter dari sign in adalah provider maka kita gunakan google.
+                           ('google', {redirectTo: "/dashboard}) selain tambahkan login kita juga tambahkan redirect yang nanti jika sudah login 
+                           maka user akan diarahkan ke halaman tertentu.
+                *---    Jika terdapat error unhandled runtime error maka cukup copy can hostname googleusercontent.com didalam next.config
+                        images:{
+                                remotePatterns: [
+                                        {
+                                                protocol: 'https',
+                                                hostname: 'lh3.googleusercontent.com',
+                                        }
+                                ]
+                        }
+
+        PENTING : ?
+
+        Error ini berasal dari sistem otentikasi **NextAuth.js** dan mengindikasikan bahwa:
+
+        > `OAuthAccountNotLinked`: *Another account already exists with the same e-mail address.*
+
+        ### 🔍 Penjelasan Masalah
+
+        Ketika pengguna mencoba login menggunakan OAuth (seperti Google), NextAuth mendeteksi bahwa **alamat email yang sama sudah pernah 
+        digunakan untuk login sebelumnya, tapi dengan metode login yang berbeda (misalnya Credentials, GitHub, Facebook, dll)**.
+
+        **Contoh Kasus:**
+
+        * Pertama kali kamu mendaftar/login menggunakan email `abc@students.uigm.ac.id` dengan metode **email/password**.
+        * Lalu, kamu mencoba login lagi dengan metode **Google OAuth** yang memakai email yang sama (`abc@students.uigm.ac.id`).
+        * NextAuth memblokir ini karena menurut default setting, **email yang sama tidak boleh digunakan oleh dua provider berbeda**, 
+        kecuali kamu *link* akun-akun tersebut secara manual.
+
+        ---
+
+        ### ✅ Solusi yang Bisa Kamu Lakukan
+
+        #### 🔧 1. **Tautkan (Link) Akun Secara Manual**
+
+        Jika kamu mengontrol backend dan ingin menggabungkan (link) akun Google ke akun email/password yang sudah ada, kamu perlu mengatur 
+        `adapter` dan `linkAccount()` secara manual (dengan misalnya menggunakan Prisma dan `@auth/prisma-adapter`).
+
+        Contoh (dengan Prisma):
+
+        ```ts
+        adapter: PrismaAdapter(prisma),
+        ```
+
+        Kemudian kamu bisa membuat proses linking secara manual (misalnya melalui halaman pengaturan akun atau saat login pertama kali 
+        dengan OAuth).
+
+        ---
+
+        #### 🔧 2. **Gunakan Hanya Satu Metode Login**
+
+        Jika kamu tidak ingin membuat fitur link akun, kamu bisa arahkan user untuk **selalu menggunakan hanya satu jenis login**, misalnya:
+
+        * Login hanya dengan Google
+        * Atau login hanya dengan email/password
+
+        Bisa ditambahkan validasi agar saat user register, hanya tersedia satu opsi login yang konsisten.
+
+        ---
+
+        #### 🧪 3. **Hapus Akun Lama dari Database**
+
+        Kalau ini hanya percobaan/testing:
+
+        * Masuk ke database (misal dengan Prisma Studio: `npx prisma studio`)
+        * Hapus entri dari tabel `Account` atau `User` yang memakai email itu
+        * Lalu coba login ulang dari awal hanya dengan Google.
+
+        ---
+
+        ### 📘 Referensi
+
+        * [https://errors.authjs.dev#oauthaccountnotlinked](https://errors.authjs.dev#oauthaccountnotlinked) – penjelasan resmi error ini dari 
+        Auth.js
+        * [NextAuth - Linking Accounts](https://next-auth.js.org/adapters#linking-accounts) – cara menggabungkan beberapa metode login
+
+        ---
+
+        ### 💡 Tips Tambahan
+
+        * Kamu bisa menangani error `OAuthAccountNotLinked` di halaman login dan menampilkan pesan seperti:
+
+        > "Email ini sudah terdaftar dengan metode login lain. Silakan login dengan metode tersebut."
+
+        Jika kamu butuh bantuan spesifik sesuai dengan struktur `schema.prisma` kamu, kirimkan strukturnya dan aku bisa bantu lebih detail.
+
+
+===========================================
+=   - - - - - - - - - - - - - - - - - -   =                              
+=    MENAMBAHKAN FITUR SIGN IN GIT HUB    =
+=   - - - - - - - - - - - - - - - - - -   =                              
+===========================================
+Untuk menambahkan fitr login menggunakan github silahkan ikuti cara berikut ini : 
+        1.      buat button untuk login nya, yang dimana dia merutn form dengan action callback function async
+                kemudian di body nya kita deklarasikan "use server";
+        2.      kemudian await signIn import dari import { signIn } from '@/auth'; di signIn kita tambahkan 2 parameter 
+                1. github 2. {redirectTo:""}
+        3.      Tambahkan button type submit untuk menteriger form nya 
+        4.      Panggil component nya dihalaan yang dibutuhkan 
+
+        * SAMA SEPERTI GOOGLE KITA JUGA MEMBUTUHKAN CLIENT ID DAN CLIENT SCREET 
+                1.      Masuk ke github web klik profile -> settings -> dibagian kiri bawah sekali pilih developer settings 
+                2.      Klik OAuth Apps -> klik new OAuth App -> isi semua form nya 
+                        -- hompage url set ke : http://localhost:3000
+                        -- authorizationcallback set ke : https://localhost:3000/api/auth/callback/github
+                        klik register application 
+                3.      Kita akan mendapatkan client id copy dan masukkan ke .env
+                4.      Kembali ke github kemudian klik generate client secret, masukkan kode akun github atau verifikasi dengan kode 
+                        setelah iutu anda akan diberikan github secret copy dan pastekan di .env
+                5.      Pergi ke auth.ts di root project lalu lakukkan ini : 
+                        1.      import GitHub from "next-auth/providers/github"
+                        2.      tambahkan di dalam array provider github [Github]
+
+                6.      Masukkan hostname dari hasil error kedalam next.config agar github dikenali
+                            {
+                                protocol: 'https',
+                                hostname: 'avatars.githubusercontent.com',
+                        }
+
+
+===============================
+=        PERMASALAHAN         =
+===============================
+        PENTING : 
+                Jika kita sign in menggunakan google dan kita berhasil kemudian ketika kita sign in menggunakan github dengan email 
+                yang terdaftar digoogle sama dengan yang digithub maka akan terjadi gagal login dan di routes akan terdapat pesan 
+
+                ** OAuthAccountNotLinked : artinya akun tersebut telah digunakan oleh provider yang lain.
+
+                Nah akan tetapi kita harus memberitahukan user dengan cara kita tangkap error routes nya bagian : OAuthAccountNotLinked
+                        1.      Pergi ke page.tsx pada login 
+                        2.      Di page kita ambil params dengan nama 
+                                --      ({searchParams}: {searchParams?: {error?: string}}) => {}
+                                kemudian tangkap serach params nya
+                                --      const params = searchParams?.error;
+                                kemudian buat kondisi jika params == "OAuthAccountNotLinked" maka kita akan buat 
+                                ui info untuk memberitahu akun ini sudah dipakai provider lain 
+                                --      {params === 'OAuthAccountNotLinked' ? (
+                                                <div aria-live="polite" aria-atomic="true">
+                                                <span className="text-sm text-red-500 mt-2">
+                                                        Account Already Use By Another Provider
+                                                </span>
+                                                </div>
+                                        ) : null}
